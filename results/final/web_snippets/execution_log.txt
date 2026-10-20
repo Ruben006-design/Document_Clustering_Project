@@ -1,0 +1,60 @@
+=================================================================
+  DOCUMENT CLUSTERING RESEARCH PIPELINE - EXPERIMENTAL RUN
+  Paper: ESWA 294 (2025) 128762 (Pitchandi & Grace)
+=================================================================
+Execution Mode    : benchmark
+Dataset           : web_snippets
+Random Seed       : 42
+FD-FFO Mode       : passthrough
+SVR-PNN Mapping   : one_hot
+SVR Solver Mode   : exact
+Max TF-IDF Terms  : 300
+TL-HHO Pop / Iter : 10 / 5
+-----------------------------------------------------------------
+
+[Stage 1/7] Loading Dataset...
+
+[Stage 2/7] Establishing Train/Test Partition (Zero Data Leakage)...
+Training Documents : 384
+Testing Documents  : 96
+Unique Categories  : 8
+Estimated Kernel RAM (Train) : 1.12 MB
+Estimated FLOPs (Solve)      : 1.89e+07
+
+[Stage 3/7] Preprocessing Documents...
+
+[Stage 4/7] TF-IDF Feature Extraction (Fit on Train ONLY)...
+TF-IDF Vocabulary Size : 300
+
+[Stage 5/7] Running FD-FFO on Training Set...
+Features Before FD-FFO : 300
+Features After FD-FFO  : 300
+FD-FFO Removal Rate    : 0.0%
+
+[Stage 6/7] Running TL-HHO on Training Set...
+Features Selected by TL-HHO : 134 / 300
+TL-HHO Best Fitness         : 0.395316
+
+[Stage 7/7] Training SVR-PNN and Evaluating on Held-Out Test Set...
+
+=================================================================
+                       FINAL RESULTS
+=================================================================
+Execution Time       : 1.56s
+Total Samples (Tr/Te): 384 / 96
+Features: TF-IDF -> FD-FFO -> TL-HHO : 300 -> 300 -> 134
+-----------------------------------------------------------------
+Classification Metrics (Supervised):
+  Accuracy           : 0.5208 (52.08%)
+  Precision (weighted): 0.5815 (58.15%)
+  Recall    (weighted): 0.5208 (52.08%)
+  F1-Score  (weighted): 0.5236 (52.36%)
+  Precision (macro)   : 0.5815
+  Recall    (macro)   : 0.5208
+  F1-Score  (macro)   : 0.5236
+-----------------------------------------------------------------
+Clustering Metrics (Partition Agreement):
+  Rand Index (RI)    : 0.8147 (81.47%)
+  Adjusted Rand Index: 0.1903
+  NMI (Norm Mut Info): 0.3899
+=================================================================

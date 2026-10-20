@@ -1,0 +1,8 @@
+{
+  "initial_tfidf_features": 100,
+  "after_fd_ffo_features": 100,
+  "fd_ffo_removal_rate": 0.0,
+  "after_tl_hho_features": 31,
+  "tl_hho_selection_ratio": 0.31,
+  "tl_hho_best_fitness": 0.64975
+}

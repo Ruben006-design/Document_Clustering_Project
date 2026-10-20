@@ -1,0 +1,17 @@
+{
+  "mode": "benchmark",
+  "dataset_name": "20newsgroups",
+  "random_seed": 42,
+  "fdffo_mode": "passthrough",
+  "mapping_mode": "one_hot",
+  "solver_mode": "nystrom",
+  "n_components": 200,
+  "max_features": 300,
+  "tlhho_population": 10,
+  "tlhho_iterations": 5,
+  "gamma": 1.0,
+  "sigma": 1.0,
+  "train_samples": 800,
+  "test_samples": 200,
+  "num_classes": 20
+}

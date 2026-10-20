@@ -1,0 +1,64 @@
+=================================================================
+  DOCUMENT CLUSTERING RESEARCH PIPELINE - EXPERIMENTAL RUN
+  Paper: ESWA 294 (2025) 128762 (Pitchandi & Grace)
+=================================================================
+Execution Mode    : full
+Dataset           : 20newsgroups
+Random Seed       : 42
+FD-FFO Mode       : passthrough
+SVR-PNN Mapping   : one_hot
+SVR Solver Mode   : nystrom
+Nystrom Landmarks : 200
+Max TF-IDF Terms  : 100
+TL-HHO Pop / Iter : 5 / 3
+-----------------------------------------------------------------
+
+[Stage 1/7] Loading Dataset...
+Loading official 20 Newsgroups train and test splits...
+
+[Stage 2/7] Establishing Train/Test Partition (Zero Data Leakage)...
+Training Documents : 11314
+Testing Documents  : 7532
+Unique Categories  : 20
+Estimated Kernel RAM (Train) : 976.61 MB
+Estimated FLOPs (Solve)      : 4.83e+11
+WARNING: Training set size exceeds conservative threshold for exact KKT solve!
+Proceeding with scalable Nyström low-rank approximation (landmarks: 200).
+
+[Stage 3/7] Preprocessing Documents...
+
+[Stage 4/7] TF-IDF Feature Extraction (Fit on Train ONLY)...
+TF-IDF Vocabulary Size : 100
+
+[Stage 5/7] Running FD-FFO on Training Set...
+Features Before FD-FFO : 100
+Features After FD-FFO  : 100
+FD-FFO Removal Rate    : 0.0%
+
+[Stage 6/7] Running TL-HHO on Training Set...
+Features Selected by TL-HHO : 97 / 100
+TL-HHO Best Fitness         : 0.662532
+
+[Stage 7/7] Training SVR-PNN and Evaluating on Held-Out Test Set...
+
+=================================================================
+                       FINAL RESULTS
+=================================================================
+Execution Time       : 18.89s
+Total Samples (Tr/Te): 11314 / 7532
+Features: TF-IDF -> FD-FFO -> TL-HHO : 100 -> 100 -> 97
+-----------------------------------------------------------------
+Classification Metrics (Supervised):
+  Accuracy           : 0.2423 (24.23%)
+  Precision (weighted): 0.3325 (33.25%)
+  Recall    (weighted): 0.2423 (24.23%)
+  F1-Score  (weighted): 0.2230 (22.30%)
+  Precision (macro)   : 0.3191
+  Recall    (macro)   : 0.2306
+  F1-Score  (macro)   : 0.2128
+-----------------------------------------------------------------
+Clustering Metrics (Partition Agreement):
+  Rand Index (RI)    : 0.8111 (81.11%)
+  Adjusted Rand Index: 0.0555
+  NMI (Norm Mut Info): 0.2103
+=================================================================

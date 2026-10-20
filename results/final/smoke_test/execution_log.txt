@@ -1,0 +1,61 @@
+=================================================================
+  DOCUMENT CLUSTERING RESEARCH PIPELINE - EXPERIMENTAL RUN
+  Paper: ESWA 294 (2025) 128762 (Pitchandi & Grace)
+=================================================================
+Execution Mode    : smoke_test
+Dataset           : 20newsgroups
+Random Seed       : 42
+FD-FFO Mode       : passthrough
+SVR-PNN Mapping   : one_hot
+SVR Solver Mode   : exact
+Max TF-IDF Terms  : 100
+TL-HHO Pop / Iter : 10 / 5
+-----------------------------------------------------------------
+
+[Stage 1/7] Loading Dataset...
+Loading 20 Newsgroups and sampling 10 docs/class across all 20 classes (200 docs)...
+
+[Stage 2/7] Establishing Train/Test Partition (Zero Data Leakage)...
+Training Documents : 160
+Testing Documents  : 40
+Unique Categories  : 20
+Estimated Kernel RAM (Train) : 0.2 MB
+Estimated FLOPs (Solve)      : 1.37e+06
+
+[Stage 3/7] Preprocessing Documents...
+
+[Stage 4/7] TF-IDF Feature Extraction (Fit on Train ONLY)...
+TF-IDF Vocabulary Size : 100
+
+[Stage 5/7] Running FD-FFO on Training Set...
+Features Before FD-FFO : 100
+Features After FD-FFO  : 100
+FD-FFO Removal Rate    : 0.0%
+
+[Stage 6/7] Running TL-HHO on Training Set...
+Features Selected by TL-HHO : 31 / 100
+TL-HHO Best Fitness         : 0.649750
+
+[Stage 7/7] Training SVR-PNN and Evaluating on Held-Out Test Set...
+
+=================================================================
+                       FINAL RESULTS
+=================================================================
+Execution Time       : 1.31s
+Total Samples (Tr/Te): 160 / 40
+Features: TF-IDF -> FD-FFO -> TL-HHO : 100 -> 100 -> 31
+-----------------------------------------------------------------
+Classification Metrics (Supervised):
+  Accuracy           : 0.1500 (15.00%)
+  Precision (weighted): 0.1379 (13.79%)
+  Recall    (weighted): 0.1500 (15.00%)
+  F1-Score  (weighted): 0.1310 (13.10%)
+  Precision (macro)   : 0.1379
+  Recall    (macro)   : 0.1500
+  F1-Score  (macro)   : 0.1310
+-----------------------------------------------------------------
+Clustering Metrics (Partition Agreement):
+  Rand Index (RI)    : 0.8603 (86.03%)
+  Adjusted Rand Index: 0.0102
+  NMI (Norm Mut Info): 0.6251
+=================================================================
