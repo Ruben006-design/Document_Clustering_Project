@@ -3,7 +3,8 @@ import numpy as np
 
 class FDFFO:
     """
-    Fuzzy Density Fruit Fly Optimization (FD-FFO) Preprocessing.
+    Fuzzy Density Fruit Fly Optimization (FD-FFO) Preprocessing and
+    Adaptive Density-Aware Feature Selection (ADAFS).
 
     Paper Reference:
     "An optimal document clustering method using hybrid optimal feature selection
@@ -22,6 +23,9 @@ class FDFFO:
         is undefined in the paper.
       - 'density_score': Normalized density-delta heuristic (score = norm_rho * norm_delta >= threshold).
       - 'fixed_ratio': Drops the lowest scored features to match the paper's reported 70% removal.
+      - 'adaptive_density': Proposed research extension (ADAFS). Explicit, reproducible
+        two-component score combining supervised feature relevance with density-aware redundancy,
+        using an adaptive, data-driven threshold derived from training score distributions.
     """
 
     def __init__(
@@ -32,7 +36,10 @@ class FDFFO:
         removal_ratio=0.70,
         population_size=None,
         max_iterations=10,
-        random_state=42
+        random_state=42,
+        adafs_lambda=0.5,
+        adafs_threshold_method="percentile",
+        adafs_threshold_value=50.0
     ):
         self.cutoff_distance = cutoff_distance
         self.density_threshold = density_threshold
@@ -42,12 +49,23 @@ class FDFFO:
         self.max_iterations = max_iterations
         self.random_state = random_state
 
+        # ADAFS extension parameters
+        self.adafs_lambda = adafs_lambda
+        self.adafs_threshold_method = adafs_threshold_method
+        self.adafs_threshold_value = adafs_threshold_value
+
         self.density_ = None
         self.delta_ = None
         self.smell_ = None
         self.best_index_ = None
         self.feature_scores_ = None
         self.selected_features_ = None
+
+        # ADAFS diagnostic properties
+        self.relevance_scores_ = None
+        self.redundancy_scores_ = None
+        self.raw_adafs_scores_ = None
+        self.selected_threshold_ = None
 
         self.n_features_in_ = 0
         self.n_features_out_ = 0
@@ -98,7 +116,6 @@ class FDFFO:
         Paper Eq. (2): Y(y) = 1 if y < 0 else 0
         Note: D_ji - d_c < 0 <=> D_ji < d_c (cutoff distance).
         """
-        # Vectorized density calculation: count neighbors within cutoff (excluding self)
         within_cutoff = (distances < self.cutoff_distance).astype(float)
         np.fill_diagonal(within_cutoff, 0.0)
         return np.sum(within_cutoff, axis=0)
@@ -166,12 +183,144 @@ class FDFFO:
         return np.full_like(X_pos, best_x), np.full_like(Y_pos, best_y)
 
     # ==========================================================
+    # ADAFS METHODS: Relevance, Redundancy, Thresholding
+    # ==========================================================
+
+    def _calculate_feature_relevance(self, X, y):
+        """
+        Calculate supervised feature relevance using ANOVA correlation ratio eta^2.
+
+        For feature j, computes between-class variance relative to total variance:
+            SSB_j = sum_{c=1}^C N_c * (mean_{c,j} - mean_j)^2
+            SST_j = sum_{i=1}^N (x_{i,j} - mean_j)^2
+            Relevance_j = SSB_j / SST_j  (in [0, 1])
+
+        Properties:
+        - Fully non-parametric with respect to class order (nominal multiclass).
+        - Invariant to permutation of class labels.
+        - Handles zero-variance features safely (Relevance = 0.0).
+        - Supports both dense arrays and scipy.sparse matrices without dense expansion.
+        """
+        import scipy.sparse as sp
+
+        classes = np.unique(y)
+        n_classes = len(classes)
+        n_features = X.shape[1]
+        n_samples = X.shape[0]
+
+        if n_classes < 2 or n_samples < 2:
+            return np.zeros(n_features, dtype=float)
+
+        if sp.issparse(X):
+            # Column means across all training samples
+            mean_total = np.asarray(X.mean(axis=0)).ravel().astype(float)
+
+            # Total sum of squares: sum(x_ij^2) - N * mean_j^2
+            sum_sq = np.asarray(X.power(2).sum(axis=0)).ravel().astype(float)
+            sst = np.maximum(sum_sq - n_samples * (mean_total ** 2), 0.0)
+
+            # Between-class sum of squares
+            ssb = np.zeros(n_features, dtype=float)
+            for c in classes:
+                class_mask = (y == c)
+                n_c = int(np.sum(class_mask))
+                if n_c > 0:
+                    class_mean = np.asarray(X[class_mask].mean(axis=0)).ravel().astype(float)
+                    ssb += n_c * ((class_mean - mean_total) ** 2)
+        else:
+            X_dense = np.asarray(X, dtype=float)
+            mean_total = np.mean(X_dense, axis=0)
+            sst = np.sum((X_dense - mean_total) ** 2, axis=0)
+            ssb = np.zeros(n_features, dtype=float)
+            for c in classes:
+                class_mask = (y == c)
+                n_c = int(np.sum(class_mask))
+                if n_c > 0:
+                    class_mean = np.mean(X_dense[class_mask], axis=0)
+                    ssb += n_c * ((class_mean - mean_total) ** 2)
+
+        safe_sst = np.where(sst > 1e-12, sst, 1.0)
+        relevance = np.where(sst > 1e-12, ssb / safe_sst, 0.0)
+        return np.clip(relevance, 0.0, 1.0)
+
+    def _calculate_feature_redundancy(self, distances, density):
+        """
+        Calculate density-aware feature redundancy in [0, 1].
+
+        Features located in high-density regions of representation space share
+        substantial information with many candidate neighbors.
+        Redundancy_j = rho_j / max(rho) if max(rho) > 0 else 0.0.
+        """
+        max_rho = np.max(density) if np.max(density) > 0 else 0.0
+        if max_rho > 0:
+            redundancy = density / max_rho
+        else:
+            redundancy = np.zeros(len(density), dtype=float)
+        return np.clip(redundancy, 0.0, 1.0)
+
+    def _otsu_1d_threshold(self, scores, n_bins=50):
+        """
+        Compute optimal 1D Otsu bimodal separation threshold for score distributions.
+        """
+        counts, bin_edges = np.histogram(scores, bins=n_bins, range=(0.0, 1.0))
+        total = len(scores)
+        if total == 0:
+            return 0.5
+
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+        current_max = -1.0
+        best_thresh = float(np.median(scores))
+        sum_total = np.sum(counts * bin_centers)
+
+        weight_bg = 0.0
+        sum_bg = 0.0
+
+        for i in range(n_bins):
+            weight_bg += counts[i]
+            if weight_bg == 0:
+                continue
+            weight_fg = total - weight_bg
+            if weight_fg == 0:
+                break
+            sum_bg += counts[i] * bin_centers[i]
+            mean_bg = sum_bg / weight_bg
+            mean_fg = (sum_total - sum_bg) / weight_fg
+            between_var = weight_bg * weight_fg * ((mean_bg - mean_fg) ** 2)
+            if between_var > current_max:
+                current_max = between_var
+                best_thresh = float(bin_centers[i])
+
+        return best_thresh
+
+    def _calculate_adaptive_threshold(self, scores):
+        """
+        Derive an adaptive, distribution-driven threshold from training scores.
+        """
+        method = self.adafs_threshold_method
+        val = self.adafs_threshold_value
+
+        if method == "percentile":
+            p = float(np.clip(val if val is not None else 50.0, 0.0, 100.0))
+            threshold = float(np.percentile(scores, p))
+        elif method == "mean":
+            threshold = float(np.mean(scores))
+        elif method == "otsu":
+            threshold = float(self._otsu_1d_threshold(scores))
+        elif method == "std":
+            k = float(val) if val is not None else 0.5
+            threshold = float(np.mean(scores) - k * np.std(scores))
+        else:
+            raise ValueError(f"Unknown adafs_threshold_method: '{method}'")
+
+        return threshold
+
+    # ==========================================================
     # FIT
     # ==========================================================
 
     def fit(self, X, y=None):
         """
-        Execute FD-FFO feature analysis and selection.
+        Execute feature analysis and selection.
         Supports both dense NumPy arrays and scipy.sparse matrices.
         """
         import scipy.sparse as sp
@@ -190,6 +339,7 @@ class FDFFO:
             raise ValueError("cutoff_distance must be positive.")
 
         self.n_features_in_ = X.shape[1]
+        n_features = X.shape[1]
 
         # 1. Pairwise distances between features
         distances = self._pairwise_distances(X)
@@ -199,7 +349,6 @@ class FDFFO:
         self.delta_ = self._calculate_delta(distances, self.density_)
 
         # 3. Fruit Fly Search Loop (Eqs. 4-10)
-        n_features = X.shape[1]
         X_pos, Y_pos, rng = self._initialize_fruit_flies(n_features)
 
         best_index = 0
@@ -255,6 +404,40 @@ class FDFFO:
             ranked_indices = np.argsort(scores)[::-1]
             mask = np.zeros(n_features, dtype=bool)
             mask[ranked_indices[:n_keep]] = True
+            self.selected_features_ = mask
+
+        elif self.scoring_mode == "adaptive_density":
+            # Proposed ADAFS Research Extension
+            if y is None:
+                raise ValueError(
+                    "scoring_mode='adaptive_density' requires training labels y to compute supervised relevance."
+                )
+
+            # Component A: Supervised Feature Relevance [0, 1]
+            self.relevance_scores_ = self._calculate_feature_relevance(X, y)
+
+            # Component B: Density-Aware Feature Redundancy [0, 1]
+            self.redundancy_scores_ = self._calculate_feature_redundancy(distances, self.density_)
+
+            # Component C: Combined ADAFS Score = Relevance - lambda * Redundancy
+            raw_scores = self.relevance_scores_ - (self.adafs_lambda * self.redundancy_scores_)
+            self.raw_adafs_scores_ = raw_scores.copy()
+
+            # Normalization into [0, 1]
+            min_s = float(np.min(raw_scores))
+            max_s = float(np.max(raw_scores))
+            if max_s > min_s:
+                self.feature_scores_ = (raw_scores - min_s) / (max_s - min_s)
+            else:
+                self.feature_scores_ = np.ones(n_features, dtype=float)
+
+            # Component D: Adaptive Distribution-Driven Thresholding
+            self.selected_threshold_ = self._calculate_adaptive_threshold(self.feature_scores_)
+
+            mask = self.feature_scores_ >= self.selected_threshold_
+            if not np.any(mask):
+                # Deterministic fallback: guarantee at least the top feature is retained
+                mask[np.argmax(self.feature_scores_)] = True
             self.selected_features_ = mask
 
         else:

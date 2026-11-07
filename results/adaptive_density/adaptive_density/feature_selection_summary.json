@@ -1,0 +1,11 @@
+{
+  "initial_tfidf_features": 300,
+  "after_fd_ffo_features": 150,
+  "fd_ffo_removal_rate": 0.5,
+  "after_tl_hho_features": 65,
+  "tl_hho_selection_ratio": 0.43333333333333335,
+  "tl_hho_best_fitness": 0.6170833333333333,
+  "adafs_selected_threshold": 0.5436666644684887,
+  "adafs_lambda": 0.5,
+  "adafs_threshold_method": "percentile"
+}

@@ -39,7 +39,10 @@ def run_experiment(
     gamma=1.0,
     sigma=1.0,
     seed=42,
-    results_dir="results"
+    results_dir="results",
+    adafs_lambda=0.5,
+    adafs_threshold_method="percentile",
+    adafs_threshold_value=50.0
 ):
     """
     Execute the document clustering / classification pipeline with
@@ -50,7 +53,7 @@ def run_experiment(
     2. Establish Train / Test split BEFORE feature extraction & selection
     3. Text Preprocessing
     4. TF-IDF feature extraction (fit on train ONLY, transform test)
-    5. FD-FFO feature redundancy reduction (fit on train ONLY, transform test)
+    5. FD-FFO / ADAFS feature selection (fit on train ONLY, transform test)
     6. TL-HHO metaheuristic feature selection (fit on train ONLY, transform test)
     7. SVR-PNN training (fit on train ONLY)
     8. Comprehensive evaluation on unseen test data
@@ -74,6 +77,9 @@ def run_experiment(
     log(f"Dataset           : {dataset_name}")
     log(f"Random Seed       : {seed}")
     log(f"FD-FFO Mode       : {fdffo_mode}")
+    if fdffo_mode == "adaptive_density":
+        log(f"ADAFS Lambda      : {adafs_lambda}")
+        log(f"ADAFS Thresh Met  : {adafs_threshold_method} (val={adafs_threshold_value})")
     log(f"SVR-PNN Mapping   : {mapping_mode}")
     log(f"SVR Solver Mode   : {solver_mode}")
     if solver_mode == "nystrom":
@@ -123,7 +129,7 @@ def run_experiment(
             )
             is_pre_split = False
     else:
-        raise ValueError(f"Unknown dataset: {dataset_name}")
+        raise ValueError(f"Unknown dataset: '{dataset_name}'")
 
     # ==========================================================
     # 2. TRAIN / TEST SPLIT (PREVENT DATA LEAKAGE)
@@ -147,6 +153,7 @@ def run_experiment(
     resource_info = SVRPNN.estimate_resource_requirements(len(raw_train_docs))
     log(f"Estimated Kernel RAM (Train) : {resource_info['kernel_memory_mb']} MB")
     log(f"Estimated FLOPs (Solve)      : {resource_info['approx_flops']}")
+
     if not resource_info["is_feasible_exact"]:
         log("WARNING: Training set size exceeds conservative threshold for exact KKT solve!")
         if mode == "full":
@@ -175,22 +182,27 @@ def run_experiment(
     log(f"TF-IDF Vocabulary Size : {X_train_tfidf.shape[1]}")
 
     # ==========================================================
-    # 5. FD-FFO FEATURE REDUNDANCY REDUCTION
+    # 5. FD-FFO / ADAFS FEATURE REDUCTION
     # ==========================================================
-    log("\n[Stage 5/7] Running FD-FFO on Training Set...")
+    log("\n[Stage 5/7] Running FD-FFO / ADAFS on Training Set...")
     fdffo = FDFFO(
         cutoff_distance=0.5,
         density_threshold=0.4,
         scoring_mode=fdffo_mode,
         max_iterations=10,
-        random_state=seed
+        random_state=seed,
+        adafs_lambda=adafs_lambda,
+        adafs_threshold_method=adafs_threshold_method,
+        adafs_threshold_value=adafs_threshold_value
     )
-    X_train_fdffo = fdffo.fit_transform(X_train_tfidf)
+    X_train_fdffo = fdffo.fit_transform(X_train_tfidf, y_train)
     X_test_fdffo = fdffo.transform(X_test_tfidf)
 
-    log(f"Features Before FD-FFO : {fdffo.n_features_in_}")
-    log(f"Features After FD-FFO  : {fdffo.n_features_out_}")
-    log(f"FD-FFO Removal Rate    : {fdffo.removal_rate_ * 100:.1f}%")
+    log(f"Features Before Selection : {fdffo.n_features_in_}")
+    log(f"Features After Selection  : {fdffo.n_features_out_}")
+    log(f"Stage 1 Removal Rate      : {fdffo.removal_rate_ * 100:.1f}%")
+    if fdffo_mode == "adaptive_density" and fdffo.selected_threshold_ is not None:
+        log(f"ADAFS Selected Threshold  : {fdffo.selected_threshold_:.4f}")
 
     # ==========================================================
     # 6. TL-HHO FEATURE SELECTION
@@ -251,20 +263,20 @@ def run_experiment(
     log("\n" + "=" * 65)
     log("                       FINAL RESULTS")
     log("=" * 65)
-    log(f"Execution Time       : {elapsed_time}s")
+    log(f"Execution Time       : {elapsed_time:.2f}s")
     log(f"Total Samples (Tr/Te): {len(y_train)} / {len(y_test)}")
-    log(f"Features: TF-IDF -> FD-FFO -> TL-HHO : {X_train_tfidf.shape[1]} -> {X_train_fdffo.shape[1]} -> {n_tlhho_selected}")
+    log(f"Features: TF-IDF -> FD-FFO/ADAFS -> TL-HHO : {X_train_tfidf.shape[1]} -> {X_train_fdffo.shape[1]} -> {X_train_tlhho.shape[1]}")
     log("-" * 65)
     log("Classification Metrics (Supervised):")
     log(f"  Accuracy           : {accuracy:.4f} ({accuracy * 100:.2f}%)")
     log(f"  Precision (weighted): {precision_w:.4f} ({precision_w * 100:.2f}%)")
-    log(f"  Recall    (weighted): {recall_w:.4f} ({recall_w * 100:.2f}%)")
-    log(f"  F1-Score  (weighted): {f1_w:.4f} ({f1_w * 100:.2f}%)")
-    log(f"  Precision (macro)   : {precision_m:.4f}")
-    log(f"  Recall    (macro)   : {recall_m:.4f}")
-    log(f"  F1-Score  (macro)   : {f1_m:.4f}")
+    log(f"  Recall (weighted)  : {recall_w:.4f} ({recall_w * 100:.2f}%)")
+    log(f"  F1-Score (weighted): {f1_w:.4f} ({f1_w * 100:.2f}%)")
+    log(f"  Precision (macro)  : {precision_m:.4f} ({precision_m * 100:.2f}%)")
+    log(f"  Recall (macro)     : {recall_m:.4f} ({recall_m * 100:.2f}%)")
+    log(f"  F1-Score (macro)   : {f1_m:.4f} ({f1_m * 100:.2f}%)")
     log("-" * 65)
-    log("Clustering Metrics (Partition Agreement):")
+    log("Clustering Metrics (Unsupervised Ground Truth Comparison):")
     log(f"  Rand Index (RI)    : {ri:.4f} ({ri * 100:.2f}%)")
     log(f"  Adjusted Rand Index: {ari:.4f}")
     log(f"  NMI (Norm Mut Info): {nmi:.4f}")
@@ -288,6 +300,10 @@ def run_experiment(
         "test_samples": len(y_test),
         "num_classes": len(target_names)
     }
+    if fdffo_mode == "adaptive_density":
+        config_dict["adafs_lambda"] = adafs_lambda
+        config_dict["adafs_threshold_method"] = adafs_threshold_method
+        config_dict["adafs_threshold_value"] = adafs_threshold_value
 
     feature_summary = {
         "initial_tfidf_features": int(X_train_tfidf.shape[1]),
@@ -297,6 +313,10 @@ def run_experiment(
         "tl_hho_selection_ratio": float(n_tlhho_selected / max(1, X_train_fdffo.shape[1])),
         "tl_hho_best_fitness": float(tlhho.best_fitness)
     }
+    if fdffo_mode == "adaptive_density" and fdffo.selected_threshold_ is not None:
+        feature_summary["adafs_selected_threshold"] = float(fdffo.selected_threshold_)
+        feature_summary["adafs_lambda"] = float(adafs_lambda)
+        feature_summary["adafs_threshold_method"] = str(adafs_threshold_method)
 
     metrics_dict = {
         "execution_time_seconds": elapsed_time,
@@ -335,8 +355,9 @@ def main():
                         help="Experiment mode: smoke_test, benchmark, or full")
     parser.add_argument("--dataset", type=str, default="20newsgroups", choices=["20newsgroups", "web_snippets"],
                         help="Dataset to evaluate on")
-    parser.add_argument("--fdffo_mode", type=str, default="passthrough", choices=["passthrough", "density_score", "fixed_ratio"],
-                        help="FD-FFO scoring mode")
+    parser.add_argument("--fdffo_mode", type=str, default="passthrough",
+                        choices=["passthrough", "density_score", "fixed_ratio", "adaptive_density"],
+                        help="FD-FFO / ADAFS scoring mode")
     parser.add_argument("--mapping_mode", type=str, default="one_hot", choices=["one_hot", "ordinal"],
                         help="SVR multiclass mapping mode")
     parser.add_argument("--solver_mode", type=str, default="exact", choices=["exact", "nystrom"],
@@ -353,6 +374,14 @@ def main():
                         help="Random seed")
     parser.add_argument("--results_dir", type=str, default="results",
                         help="Output directory for results and logs")
+    # ADAFS parameters
+    parser.add_argument("--adafs_lambda", type=float, default=0.5,
+                        help="ADAFS trade-off parameter weighting redundancy penalty (default: 0.5)")
+    parser.add_argument("--adafs_threshold_method", type=str, default="percentile",
+                        choices=["percentile", "mean", "otsu", "std"],
+                        help="ADAFS adaptive thresholding method (default: percentile)")
+    parser.add_argument("--adafs_threshold_value", type=float, default=50.0,
+                        help="ADAFS threshold parameter value (percentile [0-100] or std multiplier, default: 50.0)")
 
     args = parser.parse_args()
 
@@ -371,7 +400,10 @@ def main():
         pop_size=args.pop_size,
         max_iter=args.max_iter,
         seed=args.seed,
-        results_dir=args.results_dir
+        results_dir=args.results_dir,
+        adafs_lambda=args.adafs_lambda,
+        adafs_threshold_method=args.adafs_threshold_method,
+        adafs_threshold_value=args.adafs_threshold_value
     )
 
 
