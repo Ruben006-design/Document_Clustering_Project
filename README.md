@@ -156,12 +156,37 @@ All experiments were executed with random seed **42** using the current environm
 
 ---
 
-## 7. Project Structure
+## 7. Figures and Reproducibility Analysis
+
+Publication-quality research presentation figures, component-level reproducibility status audits, and automated generation scripts are archived under [`results/figures/`](results/figures/):
+
+- **Master Experimental Results Table:** [`results/final/final_experiment_metrics.csv`](results/final/final_experiment_metrics.csv)
+- **Reproducibility Status Matrix:** [`results/figures/reproducibility_status.csv`](results/figures/reproducibility_status.csv)
+- **Detailed Figure Documentation & Catalog:** [`results/figures/README.md`](results/figures/README.md)
+- **Figure Generation Script:** [`scripts/generate_figures.py`](scripts/generate_figures.py)
+
+### Generated Research Figures:
+1. **[Figure 1: Classification Accuracy Comparison](results/figures/01_accuracy_comparison.png)** — Benchmarking supervised test accuracy across all 5 final pipelines against random-guess baselines.
+2. **[Figure 2: Clustering Metrics Comparison (Rand Index & NMI)](results/figures/02_ri_nmi_comparison.png)** — Evaluating pairwise Rand Index (percentage scale) and Normalized Mutual Information (decimal scale).
+3. **[Figure 3: Feature Selection Reduction Progression](results/figures/03_feature_selection_reduction.png)** — Visualizing term counts across TF-IDF $\to$ FD-FFO $\to$ TL-HHO stages.
+4. **[Figure 4: Exact Dual Solver vs. Nyström Low-Rank Approximation](results/figures/04_exact_vs_nystrom.png)** — Comparative evaluation of classification accuracy, Rand Index, NMI, and execution time under an identical 20 Newsgroups benchmark split.
+5. **[Figure 5: Scientific Audit — Paper Claims vs. Reproduced Results](results/figures/05_paper_vs_reproduced.png)** — Demonstrates close reproduction of paper Table 6 Rand Index (92.21% vs 92.34%), compatible NMI ranges, and highlights the non-equivalence of the paper's $>95\%$ accuracy claim under undefined "Chunk Size" subsets.
+
+To regenerate all figures:
+```powershell
+python scripts\generate_figures.py
+```
+
+---
+
+## 8. Project Structure
 
 ```
 D:\DocumentClusteringProject/
 ├── main.py                        # Pipeline entry point & CLI orchestrator
 ├── README.md                      # Project documentation & reproduction guide
+├── scripts/
+│   └── generate_figures.py        # Automated publication figure generator
 ├── src/
 │   ├── data_loader.py             # Offline 20 Newsgroups & Web-Snippets loaders
 │   ├── preprocessing.py          # Lowercasing, punctuation & whitespace cleaner
@@ -184,6 +209,14 @@ D:\DocumentClusteringProject/
 │   │   ├── 20ng_nystrom/          # Experiment C outputs
 │   │   ├── 20ng_full_nystrom/     # Experiment D outputs
 │   │   └── web_snippets/          # Experiment E outputs
+│   ├── figures/                   # Presentation figures & reproducibility status
+│   │   ├── 01_accuracy_comparison.png
+│   │   ├── 02_ri_nmi_comparison.png
+│   │   ├── 03_feature_selection_reduction.png
+│   │   ├── 04_exact_vs_nystrom.png
+│   │   ├── 05_paper_vs_reproduced.png
+│   │   ├── reproducibility_status.csv
+│   │   └── README.md
 │   └── verification_20261020_000800/ # Audit artifacts & equation traceability
 └── backups/                       # Timestamped pre-modification snapshots
 ```
